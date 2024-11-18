@@ -1,0 +1,4 @@
+The aim of the study is to compare the performance of split-validation, bootstrap, cross validation and nested cross validation with transcriptomic data using time-to event endpoint in a head and neck carcinomas simulation study to better assess the way we can ensure the stability of the predictive performance of a model using a large quantity of predictor with the problematic of right censored data.
+Internal Validation process have to ensure performance nearest as possible of external validation approach.
+As recommended in logistic regression, cross-validation approach seems to be stable and less optimist than the other approach.
+We aimed to quantify the optimism bias and stability of these methods according to sample size using different penalized regression approach for selection of the models of interest.
