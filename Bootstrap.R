@@ -195,10 +195,10 @@ library(doParallel)
   save(AUC_BT_ridge3, file = "AUC_BT_ridge3.RData")
   
     ## save the results
-  result_BT1 = cbind(AUC_BT_lasso1, AUC_BT_enet1, AUC_BT_ridge1, result_BT_adapt1)
+  result_BT1 = cbind(AUC_BT_lasso1, AUC_BT_enet1, AUC_BT_ridge1)
   save(result_BT1, file="result_BT1.RData")
-  result_BT2 = cbind(AUC_BT_lasso2, AUC_BT_enet2, AUC_BT_ridge2, result_BT_adapt2)
+  result_BT2 = cbind(AUC_BT_lasso2, AUC_BT_enet2, AUC_BT_ridge2)
   save(result_BT2, file = "result_BT2.RData")
-  result_BT3 = cbind(AUC_BT_lasso3, AUC_BT_enet3, AUC_BT_ridge3, result_BT_adapt3)
+  result_BT3 = cbind(AUC_BT_lasso3, AUC_BT_enet3, AUC_BT_ridge3)
   save(result_BT3, file="result_BT3.RData")
   
