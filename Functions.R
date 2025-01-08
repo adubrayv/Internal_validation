@@ -212,7 +212,107 @@ AUC_bootstrap <- function(v, a, bestlambda, n_genes, n_bootstraps = 100) {
   return(list(time_roc = time_roc, ibs = ibs_mean))
 }
 
-## Extraction of AUC(t) and integrated IBS(t) of conventional bootstrap process with Mean, Q10 and Q90 values
+## 0.632+ Bootstrap etimator with out of bag (OOB) 
+AUC_bootstrap_632plus <- function(v, a, bestlambda, n_genes, n_bootstraps = 100, seed = 1234) {
+  set.seed(seed)
+  n <- nrow(v)
+  ind_cov <- 1:(n_genes + 4)
+  X <- as.matrix(v[, ind_cov])
+  Y <- Surv(v$surv, v$event)
+  time_roc <- list()
+  ibs <- list()
+  for (i in 1:n_bootstraps) {
+    # Generate bootstrap sample indices
+    train_indices <- sample(1:n, size = n, replace = TRUE)
+    test_indices <- setdiff(1:n, train_indices)
+    if (length(test_indices) == 0) next  # Ensure OOB samples exist
+    # Training data
+    X_train <- X[train_indices, ]
+    Y_train <- Y[train_indices]
+    All_train <- v[train_indices, ]
+    # Test data (OOB samples only)
+    X_test <- X[test_indices, , drop = FALSE]
+    Y_test <- Y[test_indices]
+    All_test <- v[test_indices, ]
+    # Fit the model with elastic net
+    model <- tryCatch({
+      glmnet(X_train, Y_train, alpha = a, family = "cox", lambda = bestlambda)
+    }, error = function(e) {
+      return(NULL)  # Return NULL if model fitting fails
+    })
+    if (is.null(model)) {
+      next  # Skip this fold if model fitting failed
+    }
+    # Check for empty models or singular matrix issues
+    if (is.null(coef(model)) || all(coef(model) == 0)) {
+      next  # Skip if no coefficients are selected
+    }
+    # In-sample predictions (bootstrap sample)
+    All_train$preds <- tryCatch({
+      predict(model, newx = X_train, s = bestlambda, type = "link")
+    }, error = function(e) {
+      return(rep(NA, nrow(X_train)))  # Return NA if predictions fail
+    })
+    if (any(is.na(All_train$preds))) next  # Skip to the next iteration if predictions fail
+    # OOB predictions
+    All_test$preds <- tryCatch({
+      predict(model, newx = X_test, s = bestlambda, type = "link")
+    }, error = function(e) {
+      return(rep(NA, nrow(X_test)))  # Return NA if predictions fail
+    })
+    if (any(is.na(All_test$preds))) next  # Skip if OOB predictions fail
+    # Compute 0.632+ weighting
+    in_sample_auc <- tryCatch({
+      timeROC(
+        T = All_train$surv, delta = All_train$event, marker = All_train$preds,
+        weighting = "marginal", cause = 1, times = seq(1, 4.9, 0.1), ROC = TRUE
+      )$AUC
+    }, error = function(e) {
+      return(rep(NA, length(seq(1, 4.9, 0.1))))  # Return NA vector if AUC computation fails
+    })
+    if (all(is.na(in_sample_auc))) next  # Skip if all in-sample AUC values are NA
+    oob_auc <- tryCatch({
+      timeROC(
+        T = All_test$surv, delta = All_test$event, marker = All_test$preds,
+        weighting = "marginal", cause = 1, times = seq(1, 4.9, 0.1), ROC = TRUE
+      )$AUC
+    }, error = function(e) {
+      return(rep(NA, length(seq(1, 4.9, 0.1))))  # Return NA vector if OOB AUC computation fails
+    })
+    if (all(is.na(oob_auc))) next  # Skip if all OOB AUC values are NA
+    weight <- 0.632 / (1 - 0.368 * mean(!is.na(oob_auc)))
+    combined_auc <- (1 - weight) * in_sample_auc + weight * oob_auc 
+    # Store combined AUC
+    time_roc[[i]] <- combined_auc
+    # Fit a Cox model and calculate IBS using the OOB data
+    cox_fit <- tryCatch({
+      coxph(Surv(All_test$surv, All_test$event) ~ preds, data = All_test, x = TRUE, y = TRUE)
+    }, error = function(e) {
+      return(NULL)  # Return NULL if Cox model fitting fails
+    })
+    if (is.null(cox_fit)) next
+    pecfit <- tryCatch({
+      pec(
+        object = list(cox_fit), formula = Surv(surv, event) ~ preds, data = All_test,
+        exact = FALSE, times = seq(0, 4.9, 0.1), cens.model = "cox", splitMethod = "none", B = 0
+      )
+    }, error = function(e) {
+      return(NULL)  # Return NULL if PEC computation fails
+    })
+    if (is.null(pecfit)) next
+    ibs[[i]] <- tryCatch({
+      crps(pecfit, times = seq(0, 4.9, 0.1), start = 0)
+    }, error = function(e) {
+      return(NA)  # Return NA if IBS computation fails
+    })
+  }
+  # Combine results
+  time_roc <- colMeans(as.data.frame(do.call(rbind, time_roc)), na.rm = TRUE)
+  ibs_mean <- colMeans(as.data.frame(do.call(rbind, ibs)), na.rm = TRUE)
+  return(list(time_roc = time_roc, ibs = ibs_mean))
+}
+
+## Extraction of AUC(t) and integrated IBS(t) of conventional or 0.632+ bootstrap process with Mean, Q10 and Q90 values
 Get_AUC_BT <- function(AUC_bootstrap) {
   # Initialize lists to store results from all folds
   all_time_roc <- list()
