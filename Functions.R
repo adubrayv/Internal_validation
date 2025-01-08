@@ -45,8 +45,6 @@ simul_data = function(n,r) {
   dat$time = sapply(H, function(x) baseline_time[which(baseline_hazard > x)[1]])
   dat$time[is.na(dat$time)] = 5
   dat$event = 1*(dat$time<5)
-  
-  dat
 }
 
 ##path
@@ -59,26 +57,6 @@ loadRData <- function(fileName){
 survobj_fun = function(v){
   survival::Surv((v$surv), (v$event))
 }
-
-### oracle model
-## selection of covariables associated with a simulated (naïve) non-zero coefficients
-## Matrix of covariables values associated with non-zero coefficients
-## calculation of linear predictor as test prediction for timeRoc package
-oracle_fun = function(v){
-  matrix_coef = as.data.frame(as.matrix(v[,1:15004]), coefs)
-  NZindex = which(coefs != 0)
-  NZcoef = coefs[NZindex]
-  oracle_data = v[,NZindex]
-  LP = as.matrix(oracle_data) %*% NZcoef
-  oracleAUC = timeROC(v$surv, 
-                      v$event, 
-                      marker = LP, 
-                      cause = 1,
-                      times = seq(0.9,4.9,0.1), 
-                      ROC= TRUE)$AUC
-  oracleAUC = as.data.frame(oracleAUC)
-}
-
 ##calculation of lambda.1se
 lambda_1se = function(v, survobj, a){
   fitlambda <- cv.glmnet(as.matrix(v[,1:15004]), survobj, family = "cox", type.measure = "C", nfolds = 10, alpha = a)
@@ -86,6 +64,12 @@ lambda_1se = function(v, survobj, a){
   return(bestlambda)
 }
 
+##best glmnet fit
+fitmodel = function(v, a, survobj, bestlambda){
+  fitmodel = glmnet(as.matrix(v[,1:15004]), alpha = a ,survobj, family = "cox", lambda = bestlambda)
+  return(fitmodel)
+}
+                    
 ##split_sample validation
 
 ## sample division of datasets using 2/3 of training sample and 1/3 of testing sample
@@ -148,8 +132,7 @@ split_sample_AUC <- function(v, a, bestlambda, n_genes, Weight = TRUE) {
   return(list(time_roc = unname(AUCroc), ibs = unname(ibs[1, 1:50])))
 }
 
-## Extraction of AUC(t) and integrated IBS(t) of split_sample process
-
+## Extraction of AUC(t) and integrated IBS(t) of split_sample process with mean, Q10 and Q90 values
 Get_AUC_SSV <- function(split_sample_AUC) {
   # Initialize lists to store results from all folds
   all_time_roc <- list()
@@ -176,11 +159,10 @@ Get_AUC_SSV <- function(split_sample_AUC) {
     Q10 = apply(ibs_SSV, 1, function(x) quantile(x, probs = 0.10, na.rm = TRUE)),
     Q90 = apply(ibs_SSV, 1, function(x) quantile(x, probs = 0.90, na.rm = TRUE))
   )
-  return(list(time_roc_summary = time_roc_df, ibs_mean_summary = ibs_mean_df, AUC_SSV = AUC_SSV, ibs_SSV = ibs_SSV))
+  return(list(time_roc_summary = time_roc_df, ibs_mean_summary = ibs_mean_df))
 }
 
 ## Bootstrap conventional
-
 AUC_bootstrap <- function(v, a, bestlambda, n_genes, n_bootstraps = 100, Weight = TRUE) {
   set.seed(1234)
   n <- nrow(v)
@@ -256,7 +238,7 @@ AUC_bootstrap <- function(v, a, bestlambda, n_genes, n_bootstraps = 100, Weight 
   return(list(time_roc = time_roc, ibs = ibs_mean))
 }
 
-## Extraction of AUC(t) and integrated IBS(t) of conventional bootstrap process
+## Extraction of AUC(t) and integrated IBS(t) of conventional bootstrap process with Mean, Q10 and Q90 values
 Get_AUC_BT <- function(AUC_bootstrap) {
   # Initialize lists to store results from all folds
   all_time_roc <- list()
@@ -287,29 +269,15 @@ Get_AUC_BT <- function(AUC_bootstrap) {
   return(list(time_roc_summary = time_roc_df, ibs_mean_summary = ibs_mean_df))
 }
 
-##10 repeated_10_cross_validation
+##repeated k fold cross_validation
 
-CV_AUC <- function(v, a, bestlambda, n_genes, n_repeats = 10, Weight = TRUE) {
+CV_AUC <- function(v, a, bestlambda, n_genes, n_repeats = 10) {
   set.seed(1234)
   n <- nrow(v)
   ind_cov <- 1:(n_genes + 4)
   # Prepare data
   X <- as.matrix(v[, ind_cov])
   Y <- Surv(v$surv, v$event)
-  # Step 1: Conditionally fit an initial Cox model for adaptive weights if Weight = TRUE
-  if (Weight) {
-    initial_cox_model <- glmnet(X, Y, alpha = 0, family = "cox", lambda = 0)
-    initial_coefs <- as.numeric(coef(initial_cox_model))  # Extract the initial coefficients
-    
-    # Step 2: Compute adaptive weights (inverse of absolute coefficient values)
-    adaptive_weights <- 1 / (abs(initial_coefs) + 1e-4)  # Add small constant to avoid division by zero
-    # Step 3: Set penalty factors to 0 for variables 15001 to 15004 (indices n_genes+1 to n_genes+4)
-    penalty_factors <- adaptive_weights
-    penalty_factors[(n_genes + 1):(n_genes + 4)] <- 0  # No penalty for variables 15001 to 15004
-  } else {
-    # If Weight = FALSE, all variables have equal penalty
-    penalty_factors <- rep(1, ncol(X))
-  }
   # Store results across repetitions
   all_time_roc <- list()
   all_ibs <- list()
@@ -332,9 +300,8 @@ CV_AUC <- function(v, a, bestlambda, n_genes, n_repeats = 10, Weight = TRUE) {
       X_test <- X[test_indices, ]
       Y_test <- Y[test_indices]
       All_test <- v[test_indices, ]
-      # Fit the model with weighted elastic net (adaptive penalty and unpenalized variables)
       fit_model <- tryCatch({
-        glmnet(X_train, Y_train, alpha = a, family = "cox", lambda = bestlambda, penalty.factor = penalty_factors)
+        glmnet(X_train, Y_train, alpha = a, family = "cox", lambda = bestlambda)
       }, error = function(e) {
         return(NULL)  # Return NULL if model fitting fails
       })
@@ -403,13 +370,11 @@ Get_AUC_CV <- function(CV_AUC) {
     Q10 = apply(ibs_CV, 1, function(x) quantile(x, probs = 0.10, na.rm = TRUE)),
     Q90 = apply(ibs_CV, 1, function(x) quantile(x, probs = 0.90, na.rm = TRUE))
   )
-  return(list(time_roc_summary = time_roc_df, ibs_mean_summary = ibs_mean_df, AUC_CV = AUC_CV, ibs_CV = ibs_CV))
+  return(list(time_roc_summary = time_roc_df, ibs_mean_summary = ibs_mean_df))
 }
 
 
-##repeated nested CV
-
-## 10-repeated 5-fold CV with nested 5-fold CV for hyperparameter tuning
+##nested Cross Validation defined by inner and outer loop
 NCV_AUC <- function(v, a, lambdas, n_genes, n_repeats = 10, Weight = TRUE) {
   set.seed(1234)
   n <- nrow(v)
@@ -417,19 +382,6 @@ NCV_AUC <- function(v, a, lambdas, n_genes, n_repeats = 10, Weight = TRUE) {
   # Prepare data
   X <- as.matrix(v[, ind_cov])
   Y <- Surv(v$surv, v$event)
-  # Step 1: Conditionally fit an initial Cox model to get initial coefficients (used for adaptive weights if Weight = TRUE)
-  if (Weight) {
-    initial_cox_model <- glmnet(X, Y, alpha = 0, family = "cox", lambda = 0)
-    initial_coefs <- as.numeric(coef(initial_cox_model))  # Extract initial coefficients
-    # Step 2: Compute adaptive weights (inverse of absolute coefficient values)
-    adaptive_weights <- 1 / (abs(initial_coefs) + 1e-4)  # Add small constant to avoid division by zero
-    # Step 3: Set penalty factors to 0 for variables 15001 to 15004 (indices n_genes+1 to n_genes+4) if Weight is TRUE
-    penalty_factors <- adaptive_weights
-    penalty_factors[(n_genes + 1):(n_genes + 4)] <- 0  # No penalty for variables 15001 to 15004 when Weight is TRUE
-  } else {
-    # No weighting applied if Weight = FALSE, all coefficients have equal weight of 1
-    penalty_factors <- rep(1, ncol(X))  # All variables penalized, including 15001 to 15004
-  }
   # Store results across repetitions
   all_time_roc <- list()
   all_ibs <- list()
@@ -465,7 +417,7 @@ NCV_AUC <- function(v, a, lambdas, n_genes, n_repeats = 10, Weight = TRUE) {
         Y_inner_val <- Y_train_tuning[inner_test_indices]
         All_inner_val <- All_train_tuning[inner_test_indices, ]
         # Fit the model with the current lambda using penalty factors
-        model_inner <- glmnet(X_inner_train, Y_inner_train, alpha = a, family = "cox", lambda = lambda, penalty.factor = penalty_factors)
+        model_inner <- glmnet(X_inner_train, Y_inner_train, alpha = a, family = "cox", lambda = lambda)
         # Predictions for the inner validation set
         All_inner_val$preds <- predict(model_inner, newx = X_inner_val, s = lambda, type = "link")
         # Compute time-dependent AUC for this inner fold
@@ -478,7 +430,7 @@ NCV_AUC <- function(v, a, lambdas, n_genes, n_repeats = 10, Weight = TRUE) {
     # Select best lambda (highest AUC)
     bestlambda <- lambdas[which.max(cv_errors)]
     # Fit the model on the first four outer folds using the selected best lambda
-    model <- glmnet(X_train_tuning, Y_train_tuning, alpha = a, family = "cox", lambda = bestlambda, penalty.factor = penalty_factors)
+    model <- glmnet(X_train_tuning, Y_train_tuning, alpha = a, family = "cox", lambda = bestlambda)
     # Test on the 5th outer fold
     X_test <- X[test_fold_indices, ]
     Y_test <- Y[test_fold_indices]
@@ -557,45 +509,6 @@ Get_AUC_NCV <- function(NCV_AUC) {
   return(list(time_roc_summary = time_roc_df, ibs_mean_summary = ibs_mean_df))
 }
 
-##preparation for bootstrap and cross-validation,creation of survival object and optimization of lambda.1se by 10 fold cross-validation
-survobj_fun = function(v){
-  survival::Surv((v$surv), (v$event))
-}
-##calculation of lambda.1se
-lambda_1se = function(v, survobj, a){
-  fitlambda <- cv.glmnet(as.matrix(v[,1:15004]), survobj, family = "cox", type.measure = "C", nfolds = 10, alpha = a)
-  bestlambda = fitlambda$lambda.1se
-  return(bestlambda)
-}
-
-##calculation of lambda.1se weigthed
-lambda_1se = function(v, survobj, a){
-  fitlambda <- cv.glmnet(as.matrix(v[,1:15004]), survobj, family = "cox", type.measure = "C", nfolds = 10, alpha = a)
-  bestlambda = fitlambda$lambda.1se
-  return(bestlambda)
-}
-
-##best glmnet fit
-fitmodel = function(v, a, survobj, bestlambda){
-  fitmodel = glmnet(as.matrix(v[,1:15004]), alpha = a ,survobj, family = "cox", lambda = bestlambda)
-  return(fitmodel)
-}
-
-##best glmnet fit weighted
-fitmodelw <- function(v, a, survobj, bestlambda){
-  # Initial model to obtain coefficients for adaptive weights
-  initial_cox_model <- glmnet(as.matrix(v[,1:15004]), survobj, alpha = 0, family = "cox", lambda = 0)
-  initial_coefs <- as.numeric(coef(initial_cox_model))  # Extract the initial coefficients
-  # Compute adaptive weights (inverse of absolute coefficient values)
-  adaptive_weights <- 1 / (abs(initial_coefs) + 1e-4)  # Small constant to avoid division by zero
-  # Set penalty factors, with no penalty on variables 15001 to 15004
-  penalty_factors <- adaptive_weights
-  penalty_factors[15001:15004] <- 0
-  # Fit the model with adaptive weights using penalty.factor
-  fitmodel <- glmnet(as.matrix(v[,1:15004]), survobj, alpha = a, family = "cox", 
-                     lambda = bestlambda, penalty.factor = penalty_factors)
-  return(fitmodel)
-}
 ### oracle AUC
 ## selection of covariables associated with a simulated (naïve) non-zero coefficients
 ## Matrix of covariables values associated with non-zero coefficients
