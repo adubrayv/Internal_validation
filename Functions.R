@@ -75,7 +75,7 @@ fitmodel = function(v, a, survobj, bestlambda){
 ## sample division of datasets using 2/3 of training sample and 1/3 of testing sample
 ###prediction with mean AUC(t), Q10 and Q90 on test sample and integrated Brier Score (t)
 
-split_sample_AUC <- function(v, a, bestlambda, n_genes, Weight = TRUE) {
+split_sample_AUC <- function(v, a, bestlambda, n_genes) {
   set.seed(1234)
   n <- nrow(v)
   # Split the data into training and testing sets
@@ -88,21 +88,7 @@ split_sample_AUC <- function(v, a, bestlambda, n_genes, Weight = TRUE) {
   # Define the testing set
   X_test <- as.matrix(v[ind_test, ind_cov])
   All_test <- v[ind_test, ]
-  # Step 1: Conditionally fit an initial Cox model for adaptive weights if Weight = TRUE
-  if (Weight) {
-    initial_cox_model <- glmnet(X_train, Y_train, alpha = 0, family = "cox", lambda = 0)
-    initial_coefs <- as.numeric(coef(initial_cox_model))  # Extract the initial coefficients
-    # Step 2: Compute adaptive weights (inverse of absolute coefficient values)
-    adaptive_weights <- 1 / (abs(initial_coefs) + 1e-4)  # Add small constant to avoid division by zero
-    # Step 3: Set penalty factors to 0 for variables 15001 to 15004 (indices n_genes + 1 to n_genes + 4)
-    penalty_factors <- adaptive_weights
-    penalty_factors[(n_genes + 1):(n_genes + 4)] <- 0  # Unpenalized variables
-  } else {
-    # If Weight = FALSE, all variables have equal penalty
-    penalty_factors <- rep(1, ncol(X_train))
-  }
-  # Step 4: Fit the Cox model with adaptive elastic net using the computed penalty factors
-  model <- glmnet(X_train, Y_train, alpha = a, family = "cox", lambda = bestlambda, penalty.factor = penalty_factors)
+  model <- glmnet(X_train, Y_train, alpha = a, family = "cox", lambda = bestlambda)
   # Predict on the testing set
   All_test$preds <- predict(model, newx = X_test, s = bestlambda, type = "link")
   if (any(is.na(All_test$preds))) {
@@ -163,26 +149,14 @@ Get_AUC_SSV <- function(split_sample_AUC) {
 }
 
 ## Bootstrap conventional
-AUC_bootstrap <- function(v, a, bestlambda, n_genes, n_bootstraps = 100, Weight = TRUE) {
+AUC_bootstrap <- function(v, a, bestlambda, n_genes, n_bootstraps = 100) {
   set.seed(1234)
   n <- nrow(v)
   ind_cov <- 1:(n_genes + 4)
   # Prepare data
   X <- as.matrix(v[, ind_cov])
   Y <- Surv(v$surv, v$event)
-  # Step 1: Conditionally fit an initial Cox model for adaptive weights if Weight = TRUE
-  if (Weight) {
-    initial_cox_model <- glmnet(X, Y, alpha = 0, family = "cox", lambda = 0)
-    initial_coefs <- as.numeric(coef(initial_cox_model))  # Extract the initial coefficients
-    # Step 2: Compute adaptive weights (inverse of absolute coefficient values)
-    adaptive_weights <- 1 / (abs(initial_coefs) + 1e-4)  # Add small constant to avoid division by zero
-    # Step 3: Set penalty factors to 0 for variables 15001 to 15004 (indices n_genes + 1 to n_genes + 4)
-    penalty_factors <- adaptive_weights
-    penalty_factors[(n_genes + 1):(n_genes + 4)] <- 0  # Unpenalized variables
-  } else {
-    # If Weight = FALSE, all variables have equal penalty
-    penalty_factors <- rep(1, ncol(X))
-  }
+  
   # Store results
   time_roc <- list()
   pecfit <- list()
@@ -203,7 +177,7 @@ AUC_bootstrap <- function(v, a, bestlambda, n_genes, n_bootstraps = 100, Weight 
     Y_test <- Y
     All_test <- v
     # Fit the model with weighted elastic net (adaptive penalty and unpenalized variables)
-    model <- glmnet(X_train, Y_train, alpha = a, family = "cox", lambda = bestlambda, penalty.factor = penalty_factors)
+    model <- glmnet(X_train, Y_train, alpha = a, family = "cox", lambda = bestlambda)
     # Make predictions on the test data
     All_test$preds <- predict(model, newx = X_test, s = bestlambda, type = "link")
     # Check for NA values in predictions
@@ -270,7 +244,6 @@ Get_AUC_BT <- function(AUC_bootstrap) {
 }
 
 ##repeated k fold cross_validation
-
 CV_AUC <- function(v, a, bestlambda, n_genes, n_repeats = 10) {
   set.seed(1234)
   n <- nrow(v)
