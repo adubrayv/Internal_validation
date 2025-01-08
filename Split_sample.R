@@ -55,9 +55,9 @@ result_ridge3 = Get_AUC_SSV(AUC_SSV_ridge3)
 
 
 ##saving the results
-result_SSV1 = cbind(result_lasso1, result_enet1, result_ridge1, result_SSV_adapt1)
+result_SSV1 = cbind(result_lasso1, result_enet1, result_ridge1)
 save(result_SSV1, file = "result_SSV1.RData")
-result_SSV2 = cbind(result_lasso2, result_enet2, result_ridge2, result_SSV_adapt2)
+result_SSV2 = cbind(result_lasso2, result_enet2, result_ridge2)
 save(result_SSV2, file = "result_SSV2.RData")
-result_SSV3 = cbind(result_lasso3, result_enet3, result_ridge3, result_SSV_adapt3)
+result_SSV3 = cbind(result_lasso3, result_enet3, result_ridge3)
 save(result_SSV3, file = "result_SSV3.RData")
