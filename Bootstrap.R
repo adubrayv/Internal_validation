@@ -5,7 +5,7 @@ library(parallel)
 library(foreach)
 library(doParallel)
 ## Settings of bootstrap: original B = 100, a = 0.95/0.5/0.05
-### 1) Original bootstrap using lambda.1se tuned in model selection for each scenario and penalized method
+### 1) Conventional bootstrap using lambda.1se tuned in model selection for each scenario and penalized method
 ### 2) Extraction of the mean of AUC(t), Q10, Q90
 
 ##scenario1###
@@ -14,24 +14,20 @@ library(doParallel)
                                                       0.95, 
                                                       bestlambdaenet1[[i]], 
                                                       15000, 
-                                                      100, 
-                                                      Weight = FALSE))
+                                                      100))
   
   AUC_BT_lasso1 = Get_AUC_BT(BT_lasso1)
-  save(AUC_BT_lasso1, file = "result_BT_lasso1.RData")
   
   ##enet
   BT_enet1 <- lapply(1:100, function(i) AUC_bootstrap(sim_data100[[i]], 
                                                       0.5, 
                                                       bestlambdaenet1[[i]], 
                                                       15000, 
-                                                      100, 
-                                                      Weight = FALSE))
+                                                      100))
   
 
   AUC_BT_enet1 = Get_AUC_BT(BT_enet1)
-  save(AUC_BT_enet1, file = "result_BT_enet1.RData")
-  
+
   ##ridge-like
   numCores <- 4
   cl <- makeCluster(numCores)
@@ -50,25 +46,10 @@ library(doParallel)
                   0.05, 
                   bestlambdaridge1[[i]], 
                   15000, 
-                  100, 
-                  Weight = FALSE)
+                  100)
   })
   stopCluster(cl)
   AUC_BT_ridge1 = Get_AUC_BT(BTpar_ridge1)
-  save(AUC_BT_ridge1, file = "result_BT_ridge1.RData")
-  
-  ##adaptative Enet
-  AUC_BT_adapt1 = lapply(1:100, function (i) AUC_bootstrap(sim_data100[[i]], 
-                                                           0.5, 
-                                                           bestlambdaenet1[[i]], 
-                                                           15000, 
-                                                           100, 
-                                                           Weight = TRUE))
-  result_BT_adapt1 = Get_AUC_BT(AUC_BT_adapt1)
-  save(result_BT_adapt1, file = "result_BT_adapt1.RData")
-  
-  result_BT1 = cbind(AUC_BT_lasso1, AUC_BT_enet1, AUC_BT_ridge1)
-  save(result_BT1, file="result_BT1.RData")
   
 ###scenario2##
     ##lasso-like 
@@ -90,8 +71,7 @@ library(doParallel)
                   0.95, 
                   bestlambda2[[i]], 
                   15000, 
-                  100, 
-                  Weight = FALSE)
+                  100)
   })
   stopCluster(cl)
   AUC_BT_lasso2 = Get_AUC_BT(BT_lasso2)
@@ -115,13 +95,11 @@ library(doParallel)
                   0.5, 
                   bestlambdaenet2[[i]], 
                   15000, 
-                  100, 
-                  Weight = FALSE)
+                  100)
   })
   stopCluster(cl)
   AUC_BT_enet2 = Get_AUC_BT(BT_enet2)
-  save(AUC_BT_enet2, file = "AUC_BT_enet2.RData")
-  
+
   ##ridge-like
   numCores <- 4
   cl <- makeCluster(numCores)
@@ -140,24 +118,10 @@ library(doParallel)
                   0.05, 
                   bestlambdaridge2[[i]], 
                   15000, 
-                  100, 
-                  Weight = FALSE)
+                  100)
   })
   stopCluster(cl)
   AUC_BT_ridge2 = Get_AUC_BT(BT_ridge2)
-  save(AUC_BT_ridge2, file = "AUC_BT_ridge2.RData")
-  
-  ##adatpative Enet
-  AUC_BT_adapt2 = lapply(1:100, function (i) split_sample_AUC(sim_data500[[i]], 
-                                                              0.5, 
-                                                              bestlambdaenet2[[i]], 
-                                                              15000, 
-                                                              Weight = TRUE))
-  result_BT_adapt2 = Get_AUC_BT(AUC_BT_adapt2)
-  save(result_BT_adapt2, file = "result_BT_adapt2.RData")
-  
-  result_BT2 = cbind(AUC_BT_lasso2, AUC_BT_enet2, AUC_BT_ridge2)
-  save(result_BT2, file="result_BT2.RData")
 
 ###scenario3##
     ##lasso-like
@@ -178,13 +142,11 @@ library(doParallel)
                   0.95, 
                   bestlambda3[[i]], 
                   15000, 
-                  100, 
-                  Weight = FALSE)
+                  100)
   })
   stopCluster(cl)
   AUC_BT_lasso3 = Get_AUC_BT(BT_lasso3)
-  save(AUC_BT_lasso3, file = "result_BT_lasso3.RData")
-  
+
   ##enet
   numCores <- 4
   cl <- makeCluster(numCores)
@@ -203,13 +165,11 @@ library(doParallel)
                   0.5, 
                   bestlambdaenet3[[i]], 
                   15000, 
-                  100, 
-                  Weight = FALSE)
+                  100)
   })
   stopCluster(cl)
   AUC_BT_enet3 = Get_AUC_BT(BT_enet3)
-  save(AUC_BT_enet3, file = "AUC_BT_enet3.RData")
-  
+
   ##ridge-like
   numCores <- 4
   cl <- makeCluster(numCores)
@@ -228,25 +188,12 @@ library(doParallel)
                   0.05, 
                   bestlambdaridge3[[i]], 
                   15000, 
-                  100, 
-                  Weight = FALSE)
+                  100)
   })
   stopCluster(cl)
   AUC_BT_ridge3 = Get_AUC_BT(BT_ridge3)
   save(AUC_BT_ridge3, file = "AUC_BT_ridge3.RData")
   
-  ##adaptative Enet
-  AUC_BT_adapt3 = lapply(1:100, function (i) split_sample_AUC(sim_data1000[[i]], 
-                                                              0.5, 
-                                                              bestlambdaenet3[[i]], 
-                                                              15000, 
-                                                              Weight = TRUE))
-  result_BT_adapt3 = Get_AUC_BT(AUC_BT_adapt3)
-  save(result_BT_adapt3, file = "result_BT_adapt3.RData")
-  
-  result_BT3 = cbind(AUC_BT_lasso3, AUC_BT_enet3, AUC_BT_ridge3)
-  save(result_BT3, file="result_BT3.RData")
-
     ## save the results
   result_BT1 = cbind(AUC_BT_lasso1, AUC_BT_enet1, AUC_BT_ridge1, result_BT_adapt1)
   save(result_BT1, file="result_BT1.RData")
