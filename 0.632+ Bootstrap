@@ -1,0 +1,193 @@
+## 0.632+ Bootstrap estimator using Efron and Tsibayachi method of estimation
+## Parameters of simulation using a = 0.95/0.5/0.05, 100 bootstraps samples and previously optimized values of lambda.1se
+##scenario1###
+##lasso-like
+BT632_lasso1 = lapply(1:100, function(i) AUC_bootstrap_632plus(sim_data100[[i]], 
+                                                    0.95, 
+                                                    bestlambda1[[i]], 
+                                                    15000, 
+                                                    100))
+
+AUC_BT632_lasso1 = Get_AUC_BT(BT632_lasso1)
+
+##enet
+BT632_enet1 <- lapply(1:100, function(i) AUC_bootstrap_632plus(sim_data100[[i]], 
+                                                    0.5, 
+                                                    bestlambdaenet1[[i]], 
+                                                    15000, 
+                                                    100))
+
+
+AUC_BT632_enet1 = Get_AUC_BT(BT632_enet1)
+
+##ridge-like
+numCores <- 4
+cl <- makeCluster(numCores)
+registerDoParallel(cl)
+parallel::clusterEvalQ(cl, {
+  library(glmnet)
+  library(survival)
+  library(timeROC)
+  library(riskRegression)
+  library(pec)
+})
+# Export necessary objects and functions
+parallel::clusterExport(cl, varlist = c("sim_data100", "bestlambdaridge1", "AUC_bootstrap_632plus"))
+BT632_ridge1 <- parLapply(cl, 1:100, function(i) {
+  AUC_bootstrap_632plus(sim_data100[[i]], 
+                0.05, 
+                bestlambdaridge1[[i]], 
+                15000, 
+                100)
+})
+stopCluster(cl)
+AUC_BT632_ridge1 = Get_AUC_BT(BT632_ridge1)
+
+###scenario2##
+##lasso-like 
+numCores <- 4
+cl <- makeCluster(numCores)
+registerDoParallel(cl)
+parallel::clusterEvalQ(cl, {
+  library(glmnet)
+  library(survival)
+  library(timeROC)
+  library(riskRegression)
+  library(pec)
+})
+
+# Export necessary objects and functions
+parallel::clusterExport(cl, varlist = c("sim_data500", "bestlambda2", "AUC_bootstrap_632plus"))
+BT632_lasso2 <- parLapply(cl, 1:100, function(i) {
+  AUC_bootstrap_632plus(sim_data500[[i]], 
+                0.95, 
+                bestlambda2[[i]], 
+                15000, 
+                100)
+})
+stopCluster(cl)
+AUC_BT632_lasso2 = Get_AUC_BT(BT632_lasso2)
+
+##enet
+numCores <- 4
+cl <- makeCluster(numCores)
+registerDoParallel(cl)
+parallel::clusterEvalQ(cl, {
+  library(glmnet)
+  library(survival)
+  library(timeROC)
+  library(riskRegression)
+  library(pec)
+})
+# Export necessary objects and functions
+parallel::clusterExport(cl, varlist = c("sim_data500", "bestlambdaenet2", "AUC_bootstrap_632plus"))
+BT632_enet2 <- parLapply(cl, 1:100, function(i) {
+  AUC_bootstrap_632plus(sim_data500[[i]], 
+                0.5, 
+                bestlambdaenet2[[i]], 
+                15000, 
+                100)
+})
+stopCluster(cl)
+AUC_BT632_enet2 = Get_AUC_BT(BT632_enet2)
+
+##ridge-like
+numCores <- 4
+cl <- makeCluster(numCores)
+registerDoParallel(cl)
+parallel::clusterEvalQ(cl, {
+  library(glmnet)
+  library(survival)
+  library(timeROC)
+  library(riskRegression)
+  library(pec)
+})
+# Export necessary objects and functions
+parallel::clusterExport(cl, varlist = c("sim_data500", "bestlambdaridge2", "AUC_bootstrap_632plus"))
+BT632_ridge2 <- parLapply(cl, 1:100, function(i) {
+  AUC_bootstrap_632plus(sim_data500[[i]], 
+                0.05, 
+                bestlambdaridge2[[i]], 
+                15000, 
+                100)
+})
+stopCluster(cl)
+AUC_BT632_ridge2 = Get_AUC_BT(BT632_ridge2)
+
+###scenario3##
+##lasso-like
+numCores <- 4
+cl <- makeCluster(numCores)
+registerDoParallel(cl)
+parallel::clusterEvalQ(cl, {
+  library(glmnet)
+  library(survival)
+  library(timeROC)
+  library(riskRegression)
+  library(pec)
+})
+# Export necessary objects and functions
+parallel::clusterExport(cl, varlist = c("sim_data1000", "bestlambda3", "AUC_bootstrap_632plus"))
+BT632_lasso3 <- parLapply(cl, 1:100, function(i) {
+  AUC_bootstrap_632plus(sim_data1000[[i]], 
+                0.95, 
+                bestlambda3[[i]], 
+                15000, 
+                100)
+})
+stopCluster(cl)
+AUC_BT632_lasso3 = Get_AUC_BT(BT632_lasso3)
+
+##enet
+numCores <- 4
+cl <- makeCluster(numCores)
+registerDoParallel(cl)
+parallel::clusterEvalQ(cl, {
+  library(glmnet)
+  library(survival)
+  library(timeROC)
+  library(riskRegression)
+  library(pec)
+})
+# Export necessary objects and functions
+parallel::clusterExport(cl, varlist = c("sim_data1000", "bestlambdaenet3", "AUC_bootstrap_632plus"))
+BT632_enet3 <- parLapply(cl, 1:100, function(i) {
+  AUC_bootstrap_632plus(sim_data1000[[i]], 
+                0.5, 
+                bestlambdaenet3[[i]], 
+                15000, 
+                100)
+})
+stopCluster(cl)
+AUC_BT632_enet3 = Get_AUC_BT(BT632_enet3)
+
+##ridge-like
+numCores <- 4
+cl <- makeCluster(numCores)
+registerDoParallel(cl)
+parallel::clusterEvalQ(cl, {
+  library(glmnet)
+  library(survival)
+  library(timeROC)
+  library(riskRegression)
+  library(pec)
+})
+# Export necessary objects and functions
+parallel::clusterExport(cl, varlist = c("sim_data1000", "bestlambdaridge3", "AUC_bootstrap_632plus"))
+BT632_ridge3 <- parLapply(cl, 1:100, function(i) {
+  AUC_bootstrap_632plus(sim_data1000[[i]], 
+                0.05, 
+                bestlambdaridge3[[i]], 
+                15000, 
+                100)
+})
+stopCluster(cl)
+AUC_BT632_ridge3 = Get_AUC_BT(BT632_ridge3)
+
+## save the results
+result_BT632_1 = cbind(AUC_BT632_lasso1, AUC_BT632_enet1, AUC_BT632_ridge1)
+save(result_BT632_1, file="result_BT632_1.RData")
+result_BT632_2 = cbind(AUC_BT632_lasso2, AUC_BT632_enet2, AUC_BT632_ridge2)
+save(result_BT632_2, file = "result_BT632_2.RData")
+result_BT632_3 = cbind(AUC_BT632_lasso3, AUC_BT632_enet3, AUC_BT632_ridge3)
+save(result_BT632_3, file="result_BT632_3.RData")
