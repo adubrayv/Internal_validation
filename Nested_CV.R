@@ -3,7 +3,7 @@ library(parallel)
 library(foreach)
 library(doParallel)
 library(fastmap)
-## Settings of cross-validation: K = 10,  repetitions = 10, alpha = 0.95/0.5/0.05
+## Settings of cross-validation: K = 5,  repetitions = 5, alpha = 0.95/0.5/0.05
 ### 1) Repeated cross validation using lambda.1se tuned in model selection for each scenario and penalized method
 ### 2) Extraction of the mean of AUC(t), Q10, Q90
 lambda_lasso = seq(0,0.35,0.01)
@@ -16,11 +16,9 @@ lambda_ridge = seq(0.3,6,0.1)
                                                                   0.95,
                                                                   lambdas = lambda_lasso,
                                                                   15000,
-                                                                  5,
-                                                                  Weight = FALSE))
+                                                                  5))
   
   AUC_NCV_lasso1 = Get_AUC_NCV(NCV_lasso1)
-  save(AUC_NCV_lasso1, file = "AUC_NCV_lasso1.RData")
 
   ##enet
   numCores <- 4
@@ -41,12 +39,10 @@ lambda_ridge = seq(0.3,6,0.1)
             0.5,
             lambdas = seq(0,0.7,0.01),
             15000,
-            5,
-            Weight = FALSE)
+            5)
   })
   stopCluster(cl)
   AUC_NCV_enet1 = Get_AUC_NCV(NCV_enet1)
-  save(AUC_NCV_enet1, file = "AUC_NCV_enet1.RData")
   
   ##ridge-like
   numCores <- 4
@@ -67,38 +63,10 @@ lambda_ridge = seq(0.3,6,0.1)
             0.05,
             lambdas = seq(0.3,6,0.1),
             15000,
-            5,
-            Weight = FALSE)
+            5)
   })
   stopCluster(cl)
   AUC_NCV_ridge1 = Get_AUC_NCV(NCV_enet1)
-  save(AUC_NCV_ridge1, file = "AUC_NCV_ridge1.RData")
-  
-  ##Adaptative Enet
-  numCores <- 3
-  cl <- makeCluster(numCores)
-  registerDoParallel(cl)
-  parallel::clusterEvalQ(cl, {
-    library(glmnet)
-    library(survival)
-    library(timeROC)
-    library(riskRegression)
-    library(pec)
-    library(caret)
-  })
-  # Export necessary objects and functions
-  parallel::clusterExport(cl, varlist = c("sim_data100", "NCV_AUC"))
-  AUC_NCV_adapt1 = parLapply(cl, 1:100, function(i) {
-    NCV_AUC(sim_data100[[i]], 
-            0.5, 
-            seq(0,0.7,0.01), 
-            15000, 
-            2, 
-            Weight = TRUE)
-  })
-  stopCluster(cl)
-  result_NCV_adapt1 = Get_AUC_NCV(AUC_NCV_adapt1)
-  save(result_NCV_adapt1, file = "result_NCV_adapt1.RData")
   
 ##scenario2##
   ##lasso-like
@@ -120,13 +88,11 @@ lambda_ridge = seq(0.3,6,0.1)
              0.95,
              lambdas = seq(0,0.35,0.01),
              15000,
-             5,
-             Weight = FALSE)
+             5)
   })
   stopCluster(cl)
   AUC_NCV_lasso2 = Get_AUC_NCV(NCV_lasso2)
-  save(AUC_NCV_lasso2, file = "AUC_NCV_lasso2.RData")
-  
+
   ##enet
   numCores <- 4
   cl <- makeCluster(numCores)
@@ -146,12 +112,10 @@ lambda_ridge = seq(0.3,6,0.1)
             0.3,
             lambdas = seq(0,0.7,0.01),
             15000,
-            5,
-            Weight = FALSE)
+            5)
   })
   stopCluster(cl)
   AUC_NCV_enet2 = Get_AUC_NCV(NCV_enet2)
-  save(AUC_NCV_enet2, file = "AUC_NCV_enet2.RData")
   
   ##ridge-like
   numCores <- 4
@@ -172,23 +136,11 @@ lambda_ridge = seq(0.3,6,0.1)
             0.05,
             lambdas = seq(0.3,6,0.1),
             15000,
-            5,
-            Weight = FALSE)
+            5)
   })
   stopCluster(cl)
   AUC_NCV_ridge2 = Get_AUC_NCV(NCV_ridge2)
-  save(AUC_NCV_ridge2, file = "AUC_NCV_ridge2.RData")
   
-  ##Adaptative Enet
-  AUC_CV_adapt2 = lapply(1:100, function (i) NCV_AUC(sim_data500[[i]], 
-                                                     0.5,  
-                                                     seq(0,0.7,0.01), 
-                                                     15000, 
-                                                     5, 
-                                                     Weight = TRUE))
-  result_NCV_adapt2 = Get_AUC_NCV(AUC_NCV_adapt2)
-  save(result_NCV_adapt2, file = "result_NCV_adapt2.RData")
-
 ##scenario3##
   ##lasso-like
   numCores <- 4
@@ -209,13 +161,10 @@ lambda_ridge = seq(0.3,6,0.1)
             0.95,
             lambdas = seq(0.02,0.20,0.01),
             15000,
-            5,
-            Weight = FALSE)
+            5)
   })
   stopCluster(cl)
   AUC_NCV_lasso3 = Get_AUC_NCV(NCV_lasso3)
-  save(AUC_NCV_lasso3, file = "result_NCV_lasso3.RData")
-  
   
   ##enet
   numCores <- 4
@@ -236,13 +185,10 @@ lambda_ridge = seq(0.3,6,0.1)
             0.5,
             lambdas = seq(0,0.35,0.01),
             15000,
-            5,
-            Weight = FALSE
-            )
+            5)
   })
   stopCluster(cl)
   AUC_NCV_enet3 = Get_AUC_NCV(NCV_enet3)
-  save(AUC_NCV_enet3, file = "AUC_NCV_enet3.RData")
   
   ##ridge-like
   numCores <- 4
@@ -263,28 +209,16 @@ lambda_ridge = seq(0.3,6,0.1)
             0.05,
             lambdas = seq(0.3,4,0.1),
             15000,
-            2,
-            Weight = FALSE)
+            5)
   })
   stopCluster(cl)
   AUC_NCV_ridge3 = Get_AUC_NCV(NCV_ridge3)
-  save(AUC_NCV_ridge3, file = "AUC_NCV_ridge3.RData")
-  
-  ##Adaptative Enet
-  AUC_NCV_adapt3 = lapply(1:100, function (i) NCV_AUC(sim_data1000[[i]], 
-                                                      0.5,  
-                                                      seq(0,60.7,0.01), 
-                                                      15000, 
-                                                      5, 
-                                                      Weight = TRUE))
-  result_NCV_adapt3 = Get_AUC_NCV(AUC_NCV_adapt3)
-  save(result_NCV_adapt3, file = "result_CV_adapt3.RData")
   
     ## Save the results
-  result_CV1 = cbind(AUC_CV_lasso1, AUC_CV_enet1, AUC_CV_ridge1, result_NCV_adapt1)
-  save(result_CV1, file = "result_CV1.RData")
-  result_CV2 = cbind(AUC_CV_lasso2, AUC_CV_enet2, AUC_CV_ridge2, result_NCV_adapt2)
-  save(result_CV2, file = "result_CV2.RData")
-  result_CV3 = cbind(AUC_CV_lasso3, AUC_CV_enet3, AUC_CV_ridge3, result_NCV_adapt3)
-  save(result_CV3, file = "result_CV3.RData")
+  result_NCV1 = cbind(AUC_NCV_lasso1, AUC_NCV_enet1, AUC_NCV_ridge1)
+  save(result_NCV1, file = "result_NCV1.RData")
+  result_NCV2 = cbind(AUC_NCV_lasso2, AUC_NCV_enet2, AUC_NCV_ridge2)
+  save(result_NCV2, file = "result_NCV2.RData")
+  result_NCV3 = cbind(AUC_NCV_lasso3, AUC_NCV_enet3, AUC_NCV_ridge3)
+  save(result_NCV3, file = "result_NCV3.RData")
   
