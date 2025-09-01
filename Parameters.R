@@ -6,7 +6,7 @@ library(timeROC)
 
 ##Number of replication of scenario and sample size by scenario of simulation
 reps = 100 ##number of replication of dataset per scenario
-n_sample = c(100, 500, 1000) ##effective size of scenario 1/2/3
+n_sample = c(25,50,75,100, 500, 1000) ##effective size of scenario 1/2/3
 n = n_sample
 
 ##coefficients associated to the count data and the clinical data
