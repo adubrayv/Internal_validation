@@ -1,193 +1,133 @@
-## 0.632+ Bootstrap estimator using Efron and Tsibayachi method of estimation
-## Parameters of simulation using a = 0.95/0.5/0.05, 100 bootstraps samples and previously optimized values of lambda.1se
-##scenario1###
-##lasso-like
-BT632_lasso1 = lapply(1:100, function(i) AUC_bootstrap_632plus(sim_data100[[i]], 
-                                                    0.95, 
-                                                    bestlambda1[[i]], 
-                                                    15000, 
-                                                    100))
+##library
+library(parallel)
+library(future)
+library(furrr)
+## Settings of bootstrap: original B = 100, a = 0.95/0.5/0.05
+### 1) Original bootstrap using lambda.1se tuned in model selection for each scenario and penalized method
+### 2) Extraction of the mean of AUC(t)
 
-AUC_BT632_lasso1 = Get_AUC_BT(BT632_lasso1)
-
-##enet
-BT632_enet1 <- lapply(1:100, function(i) AUC_bootstrap_632plus(sim_data100[[i]], 
-                                                    0.5, 
-                                                    bestlambdaenet1[[i]], 
-                                                    15000, 
-                                                    100))
-
-
-AUC_BT632_enet1 = Get_AUC_BT(BT632_enet1)
-
-##ridge-like
-numCores <- 4
-cl <- makeCluster(numCores)
-registerDoParallel(cl)
-parallel::clusterEvalQ(cl, {
-  library(glmnet)
+AUC_bootstrap_632plus <- function(v, a, bestlambda, n_genes, n_bootstraps = 100, seed = 1234) {
+  # Load necessary libraries
   library(survival)
-  library(timeROC)
-  library(riskRegression)
-  library(pec)
-})
-# Export necessary objects and functions
-parallel::clusterExport(cl, varlist = c("sim_data100", "bestlambdaridge1", "AUC_bootstrap_632plus"))
-BT632_ridge1 <- parLapply(cl, 1:100, function(i) {
-  AUC_bootstrap_632plus(sim_data100[[i]], 
-                0.05, 
-                bestlambdaridge1[[i]], 
-                15000, 
-                100)
-})
-stopCluster(cl)
-AUC_BT632_ridge1 = Get_AUC_BT(BT632_ridge1)
-
-###scenario2##
-##lasso-like 
-numCores <- 4
-cl <- makeCluster(numCores)
-registerDoParallel(cl)
-parallel::clusterEvalQ(cl, {
   library(glmnet)
-  library(survival)
   library(timeROC)
-  library(riskRegression)
   library(pec)
-})
+  library(survcomp) 
+  set.seed(seed)
+  n <- nrow(v)
+  ind_cov <- 1:(n_genes + 4)
+  X <- as.matrix(v[, ind_cov])
+  Y <- Surv(v$surv, v$event)
+  time_roc <- list()
+  ibs <- list()
+  c_indices <- numeric()
+  for (i in 1:n_bootstraps) {
+    # Generate bootstrap sample indices
+    train_indices <- sample(1:n, size = n, replace = TRUE)
+    test_indices <- setdiff(1:n, train_indices)
+    
+    if (length(test_indices) == 0) next  # Ensure OOB samples exist
+    
+    # Training data
+    X_train <- X[train_indices, ]
+    Y_train <- Y[train_indices]
+    All_train <- v[train_indices, ]
+    
+    # Test data (OOB samples only)
+    X_test <- X[test_indices, , drop = FALSE]
+    Y_test <- Y[test_indices]
+    All_test <- v[test_indices, ]
+    
+    # Fit the model with elastic net
+    model <- tryCatch({
+      glmnet(X_train, Y_train, alpha = a, family = "cox", lambda = bestlambda)
+    }, error = function(e) {
+      return(NULL)
+    })
+    if (is.null(model)) next
+    
+    if (is.null(coef(model)) || all(coef(model) == 0)) next
+    
+    # In-sample predictions (bootstrap sample)
+    All_train$preds <- tryCatch({
+      predict(model, newx = X_train, s = bestlambda, type = "link")
+    }, error = function(e) { rep(NA, nrow(X_train)) })
+    if (any(is.na(All_train$preds))) next
+    
+    # OOB predictions
+    All_test$preds <- tryCatch({
+      predict(model, newx = X_test, s = bestlambda, type = "link")
+    }, error = function(e) { rep(NA, nrow(X_test)) })
+    if (any(is.na(All_test$preds))) next
+    
+    # Compute AUC for in-sample and OOB using timeROC
+    in_sample_auc <- tryCatch({
+      timeROC(
+        T = All_train$surv, delta = All_train$event, marker = All_train$preds,
+        weighting = "marginal", cause = 1, times = seq(1, 4.9, 0.1), ROC = TRUE
+      )$AUC
+    }, error = function(e) { rep(NA, length(seq(1, 4.9, 0.1)))})
+    if (all(is.na(in_sample_auc))) next
+    
+    oob_auc <- tryCatch({
+      timeROC(
+        T = All_test$surv, delta = All_test$event, marker = All_test$preds,
+        weighting = "marginal", cause = 1, times = seq(1, 4.9, 0.1), ROC = TRUE
+      )$AUC
+    }, error = function(e) { rep(NA, length(seq(1, 4.9, 0.1)))})
+    if (all(is.na(oob_auc))) next
+    
+    # Calculate 0.632+ correction
+    err_apparent <- 1 - mean(in_sample_auc, na.rm = TRUE)
+    err_bootstrap <- 1 - mean(oob_auc, na.rm = TRUE)
+    err_no_info <- 0.5
+    R <- (err_apparent - err_bootstrap) / (err_apparent - err_no_info)
+    R <- max(0, min(1, R))  # Bound R between 0 and 1
+    
+    weight <- 0.632 / (1 - 0.368 * R)
+    combined_auc <- (1 - weight) * mean(in_sample_auc, na.rm = TRUE) + weight * mean(oob_auc, na.rm = TRUE)
+    time_roc[[i]] <- combined_auc
+    
+    # Calculate c-index on OOB predictions
+    c_index <- tryCatch({
+      concordance.index(
+        x = All_test$preds,
+        surv.time = All_test$surv,
+        surv.event = All_test$event
+      )$c.index
+    }, error = function(e) { NA })
+    c_indices[i] <- c_index
+    
+    # Fit Cox model and calculate IBS on OOB samples
+    cox_fit <- tryCatch({
+      coxph(Surv(All_test$surv, All_test$event) ~ preds, data = All_test, x = TRUE, y = TRUE)
+    }, error = function(e) { NULL })
+    if (is.null(cox_fit)) next
+    
+    pecfit <- tryCatch({
+      pec(
+        object = list(cox_fit), formula = Surv(surv, event) ~ preds, data = All_test,
+        exact = FALSE, times = seq(0, 4.9, 0.1), cens.model = "cox", splitMethod = "none", B = 0
+      )
+    }, error = function(e) { NULL })
+    if (is.null(pecfit)) next
+    
+    ibs[[i]] <- tryCatch({
+      crps(pecfit, times = seq(0, 4.9, 0.1), start = 0)
+    }, error = function(e) { NA })
+  }
+  # Aggregate results
+  time_roc <- colMeans(as.data.frame(do.call(rbind, time_roc)), na.rm = TRUE)
+  ibs_mean <- colMeans(as.data.frame(do.call(rbind, ibs)), na.rm = TRUE)
+  c_index_mean <- mean(c_indices, na.rm = TRUE)
+  return(list(time_roc = time_roc, ibs = ibs_mean, c_index = c_index_mean))
+}
 
-# Export necessary objects and functions
-parallel::clusterExport(cl, varlist = c("sim_data500", "bestlambda2", "AUC_bootstrap_632plus"))
-BT632_lasso2 <- parLapply(cl, 1:100, function(i) {
-  AUC_bootstrap_632plus(sim_data500[[i]], 
-                0.95, 
-                bestlambda2[[i]], 
-                15000, 
-                100)
-})
-stopCluster(cl)
-AUC_BT632_lasso2 = Get_AUC_BT(BT632_lasso2)
-
-##enet
-numCores <- 4
-cl <- makeCluster(numCores)
-registerDoParallel(cl)
-parallel::clusterEvalQ(cl, {
-  library(glmnet)
-  library(survival)
-  library(timeROC)
-  library(riskRegression)
-  library(pec)
-})
-# Export necessary objects and functions
-parallel::clusterExport(cl, varlist = c("sim_data500", "bestlambdaenet2", "AUC_bootstrap_632plus"))
-BT632_enet2 <- parLapply(cl, 1:100, function(i) {
-  AUC_bootstrap_632plus(sim_data500[[i]], 
-                0.5, 
-                bestlambdaenet2[[i]], 
-                15000, 
-                100)
-})
-stopCluster(cl)
-AUC_BT632_enet2 = Get_AUC_BT(BT632_enet2)
-
-##ridge-like
-numCores <- 4
-cl <- makeCluster(numCores)
-registerDoParallel(cl)
-parallel::clusterEvalQ(cl, {
-  library(glmnet)
-  library(survival)
-  library(timeROC)
-  library(riskRegression)
-  library(pec)
-})
-# Export necessary objects and functions
-parallel::clusterExport(cl, varlist = c("sim_data500", "bestlambdaridge2", "AUC_bootstrap_632plus"))
-BT632_ridge2 <- parLapply(cl, 1:100, function(i) {
-  AUC_bootstrap_632plus(sim_data500[[i]], 
-                0.05, 
-                bestlambdaridge2[[i]], 
-                15000, 
-                100)
-})
-stopCluster(cl)
-AUC_BT632_ridge2 = Get_AUC_BT(BT632_ridge2)
-
-###scenario3##
-##lasso-like
-numCores <- 4
-cl <- makeCluster(numCores)
-registerDoParallel(cl)
-parallel::clusterEvalQ(cl, {
-  library(glmnet)
-  library(survival)
-  library(timeROC)
-  library(riskRegression)
-  library(pec)
-})
-# Export necessary objects and functions
-parallel::clusterExport(cl, varlist = c("sim_data1000", "bestlambda3", "AUC_bootstrap_632plus"))
-BT632_lasso3 <- parLapply(cl, 1:100, function(i) {
-  AUC_bootstrap_632plus(sim_data1000[[i]], 
-                0.95, 
-                bestlambda3[[i]], 
-                15000, 
-                100)
-})
-stopCluster(cl)
-AUC_BT632_lasso3 = Get_AUC_BT(BT632_lasso3)
-
-##enet
-numCores <- 4
-cl <- makeCluster(numCores)
-registerDoParallel(cl)
-parallel::clusterEvalQ(cl, {
-  library(glmnet)
-  library(survival)
-  library(timeROC)
-  library(riskRegression)
-  library(pec)
-})
-# Export necessary objects and functions
-parallel::clusterExport(cl, varlist = c("sim_data1000", "bestlambdaenet3", "AUC_bootstrap_632plus"))
-BT632_enet3 <- parLapply(cl, 1:100, function(i) {
-  AUC_bootstrap_632plus(sim_data1000[[i]], 
-                0.5, 
-                bestlambdaenet3[[i]], 
-                15000, 
-                100)
-})
-stopCluster(cl)
-AUC_BT632_enet3 = Get_AUC_BT(BT632_enet3)
-
-##ridge-like
-numCores <- 4
-cl <- makeCluster(numCores)
-registerDoParallel(cl)
-parallel::clusterEvalQ(cl, {
-  library(glmnet)
-  library(survival)
-  library(timeROC)
-  library(riskRegression)
-  library(pec)
-})
-# Export necessary objects and functions
-parallel::clusterExport(cl, varlist = c("sim_data1000", "bestlambdaridge3", "AUC_bootstrap_632plus"))
-BT632_ridge3 <- parLapply(cl, 1:100, function(i) {
-  AUC_bootstrap_632plus(sim_data1000[[i]], 
-                0.05, 
-                bestlambdaridge3[[i]], 
-                15000, 
-                100)
-})
-stopCluster(cl)
-AUC_BT632_ridge3 = Get_AUC_BT(BT632_ridge3)
-
-## save the results
-result_BT632_1 = cbind(AUC_BT632_lasso1, AUC_BT632_enet1, AUC_BT632_ridge1)
-save(result_BT632_1, file="result_BT632_1.RData")
-result_BT632_2 = cbind(AUC_BT632_lasso2, AUC_BT632_enet2, AUC_BT632_ridge2)
-save(result_BT632_2, file = "result_BT632_2.RData")
-result_BT632_3 = cbind(AUC_BT632_lasso3, AUC_BT632_enet3, AUC_BT632_ridge3)
-save(result_BT632_3, file="result_BT632_3.RData")
+  
+  # Aggregate results
+  time_roc <- colMeans(as.data.frame(do.call(rbind, time_roc)), na.rm = TRUE)
+  ibs_mean <- colMeans(as.data.frame(do.call(rbind, ibs)), na.rm = TRUE)
+  c_index_mean <- mean(c_indices, na.rm = TRUE)
+  
+  return(list(time_roc = time_roc, ibs = ibs_mean, c_index = c_index_mean))
+}
