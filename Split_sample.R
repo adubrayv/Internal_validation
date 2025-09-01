@@ -2,62 +2,83 @@
 ## source
 source("lambda1setuning.R")
 
-## sample division of datasets using 2/3 of training sample and 1/3 of testing sample
-###optimization of lambda.1se on training sample and prediction with mean AUC(t), Q10 and Q90 on testing sample
-
-## scenario 1
-#lasso-like
-
-AUC_SSV_lasso1 = lapply(1:100, function (i) split_sample_AUC(sim_data100[[i]], 0.95, bestlambda1[[i]], 15000))
-result_lasso1 = Get_AUC_SSV(AUC_SSV_lasso1)
-
-#enet
-
-AUC_SSV_enet1 = lapply(1:100, function (i) split_sample_AUC(sim_data100[[i]], 0.5, bestlambdaenet1[[i]], 15000))
-result_enet1 = Get_AUC_SSV(AUC_SSV_enet1)
-
-#Ridge-like
-
-AUC_SSV_ridge1 = lapply(1:100, function (i) split_sample_AUC(sim_data100[[i]], 0.05, bestlambdaridge1[[i]], 15000))
-result_ridge1 = Get_AUC_SSV(AUC_SSV_ridge1)
-
-## scenario 2
-#lasso
-
-AUC_SSV_lasso2 = lapply(1:100, function (i) split_sample_AUC(sim_data500[[i]], 0.95, bestlambda2[[i]], 15000))
-result_lasso2 = Get_AUC_SSV(AUC_SSV_lasso2)
-
-#enet
-
-AUC_SSV_enet2 = lapply(1:100, function (i) split_sample_AUC(sim_data500[[i]], 0.5, bestlambdaenet2[[i]], 15000))
-result_enet2 = Get_AUC_SSV(AUC_SSV_enet2)
-
-#Ridge-like
-
-AUC_SSV_ridge2 = lapply(1:100, function (i) split_sample_AUC(sim_data500[[i]], 0.05, bestlambdaridge2[[i]], 15000))
-result_ridge2 = Get_AUC_SSV(AUC_SSV_ridge2)
-
-## scenario 3
-#lasso-like
-
-AUC_SSV_lasso3 = lapply(1:100, function (i) split_sample_AUC(sim_data1000[[i]], 0.95, bestlambda3[[i]], 15000))
-result_lasso3 = Get_AUC_SSV(AUC_SSV_lasso3)
-
-#enet
-
-AUC_SSV_enet3 = lapply(1:100, function (i) split_sample_AUC(sim_data1000[[i]], 0.5, bestlambdaenet3[[i]], 15000))
-result_enet3 = Get_AUC_SSV(AUC_SSV_enet3)
-
-#Ridge-like
-
-AUC_SSV_ridge3 = lapply(1:100, function (i) split_sample_AUC(sim_data1000[[i]], 0.05, bestlambdaridge3[[i]], 15000))
-result_ridge3 = Get_AUC_SSV(AUC_SSV_ridge3)
-
-
-##saving the results
-result_SSV1 = cbind(result_lasso1, result_enet1, result_ridge1)
-save(result_SSV1, file = "result_SSV1.RData")
-result_SSV2 = cbind(result_lasso2, result_enet2, result_ridge2)
-save(result_SSV2, file = "result_SSV2.RData")
-result_SSV3 = cbind(result_lasso3, result_enet3, result_ridge3)
-save(result_SSV3, file = "result_SSV3.RData")
+## sample division of datasets using 70% of training sample and 30% of testing sample
+###optimization of lambda.1se on training sample and prediction with mean AUC(t)
+split_sample_AUC <- function(v, a, bestlambda, n_genes, Weight = TRUE, seed = 1234) {
+  # You may need to install 'survcomp' if not already done:
+  # install.packages("survcomp")
+  library(survival)
+  library(glmnet)
+  library(timeROC)
+  library(pec)
+  library(survcomp)
+  
+  set.seed(seed)
+  n <- nrow(v)
+  # Split the data into training and testing sets
+  ind_train <- sample(1:n, size = floor(0.7 * n))
+  ind_test <- setdiff(1:n, ind_train)
+  ind_cov <- 1:(n_genes + 4)  # Covariates include gene variables and 4 additional ones
+  # Define the training set
+  X_train <- as.matrix(v[ind_train, ind_cov])
+  Y_train <- Surv(v$surv[ind_train], v$event[ind_train])
+  # Define the testing set
+  X_test <- as.matrix(v[ind_test, ind_cov])
+  All_test <- v[ind_test, ]
+  
+  # Step 1: Conditionally fit an initial Cox model for adaptive weights if Weight = TRUE
+  if (Weight) {
+    initial_cox_model <- glmnet(X_train, Y_train, alpha = 0.5, family = "cox", lambda = 0)
+    initial_coefs <- as.numeric(coef(initial_cox_model))  # Extract the initial coefficients
+    # Step 2: Compute adaptive weights (inverse of absolute coefficient values)
+    adaptive_weights <- 1 / (abs(initial_coefs) + 1e-4) 
+    # Step 3: Set penalty factors to 0 for variables 15001 to 15004 (indices n_genes + 1 to n_genes + 4)
+    penalty_factors <- adaptive_weights
+  } else {
+    # If Weight = FALSE, all variables have equal penalty
+    penalty_factors <- rep(1, ncol(X_train))
+  }
+  model <- glmnet(X_train, Y_train, alpha = a, family = "cox", lambda = bestlambda, penalty.factor = penalty_factors)
+  # Predict on the testing set
+  All_test$preds <- predict(model, newx = X_test, s = bestlambda, type = "link")
+  
+  if (any(is.na(All_test$preds))) {
+    cox_formula <- as.formula(Surv(surv, event) ~ 1)
+    marker <- 1
+    c_index <- NA
+  } else {
+    cox_formula <- as.formula(Surv(surv, event) ~ preds)
+    marker <- All_test$preds
+    
+    # Calculate c-index using survcomp:
+    c_index <- concordance.index(
+      x = All_test$preds,
+      surv.time = All_test$surv,
+      surv.event = All_test$event
+    )$c.index
+  }
+  
+  # Calculate AUC using time-dependent ROC
+  AUCroc <- timeROC(T = All_test$surv, delta = All_test$event, marker = marker, cause = 1,
+                    times = seq(0.9, 4.9, 0.1), ROC = TRUE)$AUC
+  # Fit Cox proportional hazards model
+  cox_fit <- coxph(cox_formula, data = All_test, x = TRUE, y = TRUE)
+  if (any(is.na(coef(cox_fit)))) {
+    return(list(
+      time_roc = as.numeric(rep(NA, length(seq(0.9, 4.9, 0.1)))),
+      ibs = as.numeric(rep(NA, length(seq(0, 4.9, 0.1)))),
+      c_index = NA
+    ))
+  }
+  # Calculate Integrated Brier Score using PEC
+  pecfit <- pec(object = list(cox_fit), formula = Surv(surv, event) ~ preds, data = All_test,
+                exact = FALSE, times = seq(0, 4.9, 0.1), cens.model = "cox", splitMethod = "none", B = 0)
+  # Store the Integrated Brier Score (IBS)
+  ibs <- crps(pecfit, times = seq(0, 4.9, 0.1), start = 0.1)
+  
+  return(list(
+    time_roc = unname(AUCroc),
+    ibs = unname(ibs[1, 1:50]),
+    c_index = c_index
+  ))
+}
